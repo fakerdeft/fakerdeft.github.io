@@ -47,7 +47,7 @@ social:
 
 # Site Verification Settings
 webmaster_verifications:
-  google: # fill in your Google verification code
+  google: h8kxEh6a6d-DNgNvhPWLHyUsKW6Q23a0inU7RH-6KWk # fill in your Google verification code
   bing: # fill in your Bing verification code
   alexa: # fill in your Alexa verification code
   yandex: # fill in your Yandex verification code
@@ -122,8 +122,8 @@ comments:
   giscus:
     repo: "fakerdeft/fakerdeft.github.io" # <gh-username>/<repo>
     repo_id: "R_kgDOR6zKBg"
-    category: 
-    category_id:
+    category: "Comments"
+    category_id: "DIC_kwDOR6zKBs4C6JpQ"
     mapping: # optional, default to 'pathname'
     strict: # optional, default to '0'
     input_position: # optional, default to 'bottom'

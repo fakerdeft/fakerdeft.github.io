@@ -120,9 +120,9 @@ comments:
     issue_term: # < url | pathname | title | ...>
   # Giscus options › https://giscus.app
   giscus:
-    repo: # <gh-username>/<repo>
-    repo_id:
-    category:
+    repo: "fakerdeft/fakerdeft.github.io" # <gh-username>/<repo>
+    repo_id: "R_kgDOR6zKBg"
+    category: 
     category_id:
     mapping: # optional, default to 'pathname'
     strict: # optional, default to '0'

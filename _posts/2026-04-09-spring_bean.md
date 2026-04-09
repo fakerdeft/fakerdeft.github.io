@@ -257,28 +257,20 @@ Bean 생명주기는 Spring 컨테이너가 객체를 단순히 생성하는 데
 또한 컨테이너는 Bean 클래스를 바로 객체로 만들지 않는다. 먼저 Bean을 어떤 클래스로 만들고, 어떤 스코프를 가지며, 어떤 초기화와 소멸 메서드를 사용할지를 `BeanDefinition`이라는 메타데이터로 등록한 뒤, 그 정보를 바탕으로 실제 Bean을 생성한다.
 
 ```mermaid
-flowchart TB
-    subgraph TOP[" "]
-        direction LR
-        A["SpringApplication.run()"] --> B["ApplicationContext 구현체 생성"]
-        B --> C["BeanFactory 준비"]
-        C --> D["ComponentScan 수행"]
-        D --> E["BeanDefinition 등록"]
-        E --> F["Bean 인스턴스 생성"]
-    end
-
-    subgraph BOTTOM[" "]
-        direction LR
-        G["의존성 주입"] --> H["Aware 콜백"]
-        H --> I["BeanPostProcessor before"]
-        I --> J["초기화 콜백"]
-        J --> K["BeanPostProcessor after"]
-        K --> L["애플리케이션에서 사용"]
-        L --> M["컨테이너 종료"]
-        M --> N["소멸 콜백"]
-    end
-
-    F --> G
+flowchart TD
+    A["SpringApplication.run()"] --> B["ApplicationContext 구현체 생성"]
+    B --> C["BeanFactory 준비"]
+    C --> D["ComponentScan 수행"]
+    D --> E["BeanDefinition 등록"]
+    E --> F["Bean 인스턴스 생성"]
+    F --> G["의존성 주입"]
+    G --> H["Aware 콜백"]
+    H --> I["BeanPostProcessor before"]
+    I --> J["초기화 콜백"]
+    J --> K["BeanPostProcessor after"]
+    K --> L["애플리케이션에서 사용"]
+    L --> M["컨텍스트 종료"]
+    M --> N["종료 메서드 실행"]
 ```
 
 ### 1. ApplicationContext 생성과 refresh()

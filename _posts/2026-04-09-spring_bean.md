@@ -257,20 +257,28 @@ Bean 생명주기는 Spring 컨테이너가 객체를 단순히 생성하는 데
 또한 컨테이너는 Bean 클래스를 바로 객체로 만들지 않는다. 먼저 Bean을 어떤 클래스로 만들고, 어떤 스코프를 가지며, 어떤 초기화와 소멸 메서드를 사용할지를 `BeanDefinition`이라는 메타데이터로 등록한 뒤, 그 정보를 바탕으로 실제 Bean을 생성한다.
 
 ```mermaid
-flowchart TD
-    A["SpringApplication.run()"] --> B["ApplicationContext 구현체 생성"]
-    B --> C["BeanFactory 준비"]
-    C --> D["ComponentScan 수행"]
-    D --> E["BeanDefinition 등록"]
-    E --> F["Bean 인스턴스 생성"]
-    F --> G["의존성 주입"]
-    G --> H["Aware 콜백"]
-    H --> I["BeanPostProcessor before"]
-    I --> J["초기화 콜백"]
-    J --> K["BeanPostProcessor after"]
-    K --> L["애플리케이션에서 사용"]
-    L --> M["컨테이너 종료"]
-    M --> N["소멸 콜백"]
+flowchart TB
+    subgraph TOP[" "]
+        direction LR
+        A["SpringApplication.run()"] --> B["ApplicationContext 구현체 생성"]
+        B --> C["BeanFactory 준비"]
+        C --> D["ComponentScan 수행"]
+        D --> E["BeanDefinition 등록"]
+        E --> F["Bean 인스턴스 생성"]
+    end
+
+    subgraph BOTTOM[" "]
+        direction LR
+        G["의존성 주입"] --> H["Aware 콜백"]
+        H --> I["BeanPostProcessor before"]
+        I --> J["초기화 콜백"]
+        J --> K["BeanPostProcessor after"]
+        K --> L["애플리케이션에서 사용"]
+        L --> M["컨테이너 종료"]
+        M --> N["소멸 콜백"]
+    end
+
+    F --> G
 ```
 
 ### 1. ApplicationContext 생성과 refresh()
@@ -311,7 +319,7 @@ refreshContext(context);
 afterRefresh(context, applicationArguments);
 ```
 
-여기서 웹 애플리케이션이라면 기본적으로 `AnnotationConfigServletWebServerApplicationContext` 같은 웹용 `ApplicationContext` 구현체가 선택된다. 그리고 이후 `refresh()`가 호출되면서 Bean 등록과 생성, 초기화가 본격적으로 시작된다.
+여기서 웹 애플리케이션이라면 기본적으로 `AnnotationConfigServletWebServerApplicationContext` 같은 웹용 `ApplicationContext` 구현체가 선택된다. 그리고 이후 `refresh()`가 호출되면서 Bean 등록과 생성, 초기화가 본격적으로 시작된다. `refresh()`는 쉽게 말해 컨테이너를 실제로 동작 가능한 상태로 올리는 핵심 메서드라고 보면 된다. 이 안에서 BeanFactory 준비, BeanPostProcessor 등록, singleton Bean 생성 같은 작업이 이어진다.
 
 ### 2. BeanDefinition 등록
 
@@ -374,7 +382,7 @@ Class<?> beanType = instanceWrapper.getWrappedClass();
 
 ### 4. 의존성 주입과 초기화
 
-객체 인스턴스가 만들어지면 그 다음에는 의존성 주입과 초기화가 이어진다.
+`createBeanInstance()`까지 끝나면 순수한 자바 객체는 만들어졌지만, 아직 바로 사용할 수 있는 상태는 아니다. 이 시점의 객체에는 필요한 의존성이 채워져 있지 않을 수 있고, 초기화 콜백도 아직 실행되지 않았다. 그래서 Spring은 이 다음 단계에서 의존성을 주입하고, Bean을 실제 사용 가능한 상태로 마무리한다.
 
 ```java
 // AbstractAutowireCapableBeanFactory#doCreateBean()
@@ -385,7 +393,15 @@ try {
 }
 ```
 
-`populateBean()`은 의존성 주입을 담당하고, `initializeBean()`은 Aware 처리, `BeanPostProcessor`, 초기화 콜백 실행까지 이어지는 핵심 단계다.
+이 구간은 크게 두 단계로 나눠 볼 수 있다.
+
+1. `populateBean()`
+
+이 단계에서는 의존성 주입이 일어난다. 즉, 생성자 주입이라면 생성 시점에 넘긴 의존성이 연결되고, 필드 주입이나 setter 주입이라면 이 단계에서 Bean에 실제 값이 채워진다.
+
+2. `initializeBean()`
+
+의존성 주입이 끝난 뒤에는 Bean을 초기화하는 과정이 이어진다. 이 단계에서 Aware 콜백, BeanPostProcessor, 초기화 콜백이 순서대로 적용된다.
 
 ```java
 // AbstractAutowireCapableBeanFactory#initializeBean()
@@ -400,9 +416,11 @@ invokeInitMethods(beanName, wrappedBean, mbd);
 wrappedBean = applyBeanPostProcessorsAfterInitialization(wrappedBean, beanName);
 ```
 
-즉, 초기화 단계는 단순히 `@PostConstruct` 한 번 호출되는 정도가 아니다. 먼저 `Aware` 관련 값이 주입되고, 그 다음 `BeanPostProcessor#postProcessBeforeInitialization()`이 실행되며, 이후 `InitializingBean#afterPropertiesSet()`, 커스텀 `init-method`, `@PostConstruct` 같은 초기화 로직이 적용된다. 마지막으로 `BeanPostProcessor#postProcessAfterInitialization()`이 실행되면서 필요하면 Bean이 프록시 객체로 바뀔 수도 있다.
+먼저 `invokeAwareMethods()`가 실행되면서 `BeanNameAware`, `BeanFactoryAware`, `ApplicationContextAware` 같은 인터페이스를 구현한 Bean은 자신의 이름이나 컨테이너 참조를 전달받는다. 즉, Aware 콜백은 Bean이 컨테이너 관련 정보를 받아 가는 구간이라고 볼 수 있다.
 
-예를 들어 아래처럼 작성한 콜백은 이 초기화와 소멸 구간에 연결된다.
+그 다음 `BeanPostProcessor`가 동작한다. 이건 Bean 내부에 직접 작성하는 메서드가 아니라, Spring이 Bean 생성 과정 중간에 끼어들 수 있도록 열어 둔 확장 포인트다. Bean 하나가 초기화되기 직전과 직후에 추가 작업을 할 수 있으며, AOP 프록시 생성이 대표적인 예시다. 그래서 이 단계에서는 원본 Bean 대신 프록시 Bean이 반환될 수도 있다.
+
+그 이후에는 Bean 자신의 초기화 콜백이 실행된다. 예를 들어 `InitializingBean#afterPropertiesSet()`, 커스텀 `init-method`, `@PostConstruct` 같은 방식이 여기에 해당한다. 즉, `BeanPostProcessor`는 Spring 쪽에서 Bean을 후처리하는 장치이고, `@PostConstruct`는 Bean 자신이 초기화 시점에 실행할 로직을 선언하는 방식이라고 구분해서 보면 이해가 쉽다.
 
 ```java
 @Component
@@ -412,17 +430,12 @@ public class OrderService {
     public void init() {
         System.out.println("OrderService init");
     }
-
-    @PreDestroy
-    public void destroy() {
-        System.out.println("OrderService destroy");
-    }
 }
 ```
 
 ### 5. 사용과 소멸
 
-초기화가 끝난 Bean은 이후 애플리케이션 전반에서 주입되어 사용된다. 이 시점에는 이미 의존성 주입과 초기화가 끝난 상태이므로, 다른 Bean은 준비가 완료된 객체를 받아 사용하게 된다.
+초기화까지 끝난 Bean은 이제 애플리케이션에서 주입받아 사용할 수 있는 상태가 된다. 이 시점의 Bean은 이미 의존성 주입과 초기화가 끝난 상태이므로, 다른 Bean은 준비가 완료된 객체를 전달받아 그대로 사용하면 된다.
 
 ```java
 @Component
@@ -439,7 +452,16 @@ public class OrderRunner {
 }
 ```
 
-컨테이너가 종료되면 singleton Bean에 대해서는 소멸 콜백이 호출된다. 가장 단순하게는 `ConfigurableApplicationContext#close()`를 호출하면 된다.
+여기서 `OrderRunner`는 `OrderService`를 직접 생성하지 않는다. 컨테이너가 생명주기를 끝까지 관리해 둔 Bean을 주입받아 사용하기만 한다.
+
+그리고 컨테이너가 종료되면 소멸 단계가 시작된다. 여기서 말하는 소멸은 Spring이 Bean의 종료 메서드를 실행하고 관리 대상에서 내려놓는 lifecycle 상의 종료를 뜻한다. 객체가 즉시 힙에서 사라지는 것은 아니며, 실제 메모리 회수는 더 이상 참조가 없을 때 JVM의 GC가 담당한다. 또한 컨테이너를 닫는 행위와 Bean의 destroy 메서드가 실행되는 것은 밀접하지만 같은 일은 아니다.
+
+- `context.close()`는 컨테이너를 닫는 트리거다.
+- `@PreDestroy`는 컨테이너가 닫힐 때 이 Bean에서 실행할 메서드를 표시하는 방식이다.
+
+즉, 먼저 컨테이너가 닫혀야 소멸 단계가 시작되고, 그 다음 Spring이 관리하던 Bean들 중 destroy 메서드가 있는 Bean에 대해 정리 작업을 수행한다.
+
+실제 애플리케이션에서는 개발자가 항상 `close()`를 직접 호출하는 것은 아니다. Spring Boot 애플리케이션은 보통 종료 시점에 컨테이너를 자동으로 닫아 준다. 다만 아래 코드처럼 개발자가 직접 `close()`를 호출해도 동일하게 소멸 단계가 시작된다.
 
 ```java
 ConfigurableApplicationContext context =
@@ -451,23 +473,36 @@ orderService.order("coffee");
 context.close();
 ```
 
-이때 Bean에 `@PreDestroy`가 붙어 있다면 종료 시점에 해당 메서드가 호출된다.
+이 소멸 단계를 끝까지 관리해 주는 대상은 기본적으로 singleton Bean이다. singleton Bean은 컨테이너가 생성부터 소멸까지 생명주기를 관리하므로, 컨테이너가 닫히면 destroy 콜백도 함께 처리된다.
 
-반면 prototype Bean은 생성과 의존성 주입, 초기화까지만 컨테이너가 관여하고, 이후의 생명주기 관리와 소멸 처리는 컨테이너가 책임지지 않는다. 그래서 컨텍스트를 닫아도 prototype Bean의 소멸 콜백은 자동으로 호출되지 않는다.
+예를 들어 아래처럼 `@PreDestroy`를 선언해 두면, 컨테이너 종료 시점에 해당 메서드가 호출된다.
+
+```java
+@Component
+public class OrderService {
+
+    @PreDestroy
+    public void destroy() {
+        System.out.println("OrderService destroy");
+    }
+}
+```
+
+반면 prototype Bean은 생성과 의존성 주입, 초기화까지만 컨테이너가 관여한다. Bean을 반환한 뒤에는 컨테이너가 그 객체를 계속 추적하지 않기 때문에, 컨텍스트를 닫아도 prototype Bean의 종료 시 실행되는 메서드는 자동으로 호출되지 않는다. 즉, prototype Bean은 singleton처럼 `context.close()`에 소멸을 맡길 수 없고, 정리 작업이 필요하다면 호출한 쪽이 직접 처리해야 한다.
+
+이때 prototype Bean은 소멸 단계까지 Spring이 관리하지 않기 때문에, `@PreDestroy`를 붙여도 자동으로 호출되지 않는다. 그래서 호출한 쪽이 명시적으로 부를 정리 메서드를 두는 편이 더 분명하다.
 
 ```java
 @Scope("prototype")
 @Component
 public class PrototypeBean {
 
-    @PostConstruct
-    public void init() {
-        System.out.println("PrototypeBean init");
+    public void use() {
+        System.out.println("PrototypeBean use");
     }
 
-    @PreDestroy
-    public void destroy() {
-        System.out.println("PrototypeBean destroy");
+    public void cleanup() {
+        System.out.println("PrototypeBean cleanup");
     }
 }
 
@@ -475,10 +510,17 @@ ConfigurableApplicationContext context =
         new AnnotationConfigApplicationContext(AppConfig.class);
 
 PrototypeBean prototypeBean = context.getBean(PrototypeBean.class);
+
+try {
+    prototypeBean.use();
+} finally {
+    prototypeBean.cleanup(); // 호출한 쪽이 직접 정리
+}
+
 context.close();
 ```
 
-위 코드에서는 `init()`은 호출되지만, `destroy()`는 자동으로 호출되지 않는다. 즉, prototype Bean은 만들어서 넘겨준 뒤의 정리 책임이 호출한 쪽에 더 가깝다.
+위 코드에서는 컨테이너가 `cleanup()`을 자동으로 호출해 주지 않는다. 이 경우에는 그 Bean을 받아 사용한 쪽이 필요하다면 직접 정리 메서드를 호출해야 한다.
 
 정리하면 Spring Bean 생명주기는 ApplicationContext 준비, BeanDefinition 등록, 객체 생성, 의존성 주입, 초기화, 사용, 소멸까지 이어지는 전체 관리 흐름이다. 이 흐름을 이해해야 `@PostConstruct`, AOP 프록시, 싱글톤과 프로토타입의 차이, 컨테이너 확장 포인트가 하나의 맥락 안에서 연결된다.
 
@@ -487,3 +529,4 @@ context.close();
 #### 출처
 
 - [https://docs.spring.io/spring-framework/reference/core.html](https://docs.spring.io/spring-framework/reference/core.html)
+

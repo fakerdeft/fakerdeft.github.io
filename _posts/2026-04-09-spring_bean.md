@@ -172,6 +172,7 @@ OrderService orderService = new OrderService();
 코드만 보면 짧고 간단해 보이지만, 이 클래스가 `OrderRepository` 없이는 동작할 수 없는 객체라는 점이 생성 시점에 분명하게 드러나지 않는다. 또한 Spring 컨테이너 밖에서 직접 테스트하려고 하면 의존성을 넣어 줄 생성자나 setter가 없어 다루기가 불편하다.
 
 ```java
+OrderRepository orderRepository = new MemoryOrderRepository();
 OrderService orderService = new OrderService();
 // orderRepository를 직접 넣어 줄 방법이 없다.
 ```
@@ -208,6 +209,7 @@ orderService.setOrderRepository(orderRepository);
 테스트 코드는 필드 주입보다 낫다. 컨테이너 없이도 setter를 직접 호출해 의존성을 넣을 수 있기 때문이다.
 
 ```java
+OrderRepository orderRepository = new MemoryOrderRepository();
 OrderService orderService = new OrderService();
 orderService.setOrderRepository(new MemoryOrderRepository());
 ```
@@ -246,7 +248,9 @@ OrderRepository orderRepository = new MemoryOrderRepository();
 OrderService orderService = new OrderService(orderRepository);
 ```
 
-정리하면 필드 주입과 setter 주입은 "객체를 먼저 만들고 나중에 주입"하는 방식이고, 생성자 주입은 "객체를 만드는 순간 의존성을 함께 전달"하는 방식이다. 그래서 필수 의존성에는 일반적으로 생성자 주입이 더 권장된다.
+단점이 전혀 없는 것은 아니다. 의존성이 많아질수록 생성자 파라미터가 길어질 수 있고, 클래스가 너무 많은 책임을 지고 있다는 신호가 드러날 수 있다. 하지만 이런 불편함은 오히려 설계를 다시 보게 만드는 장점으로도 이어진다.
+
+정리하면 필드 주입과 setter 주입은 객체를 먼저 만들고 나중에 주입하는 방식이고, 생성자 주입은 객체를 만드는 순간 의존성을 함께 전달하는 방식이다. 그래서 필수 의존성에는 일반적으로 생성자 주입이 더 권장된다.
 
 ## Spring Bean 생명주기
 
@@ -313,7 +317,7 @@ afterRefresh(context, applicationArguments);
 
 여기서 웹 애플리케이션이라면 기본적으로 `AnnotationConfigServletWebServerApplicationContext` 같은 웹용 `ApplicationContext` 구현체가 선택된다. 그리고 이후 `refresh()`가 호출되면서 Bean 등록과 생성, 초기화가 본격적으로 시작된다. `refresh()`는 쉽게 말해 컨테이너를 실제로 동작 가능한 상태로 올리는 핵심 메서드라고 보면 된다. 이 안에서 BeanFactory 준비, BeanPostProcessor 등록, singleton Bean 생성 같은 작업이 이어진다.
 
-### 2. BeanDefinition 등록
+### 2. ComponentScan과 BeanDefinition 등록
 
 Bean 생성보다 먼저 일어나는 일은 BeanDefinition 등록이다. `@SpringBootApplication` 안에는 `@ComponentScan`이 포함되어 있기 때문에, Spring은 애플리케이션의 베이스 패키지부터 내려가며 `@Component`, `@Service`, `@Repository`, `@Controller`, `@Configuration`, `@RestController` 같은 stereotype 어노테이션이 붙은 클래스를 찾는다.
 
@@ -325,7 +329,7 @@ Bean 생성보다 먼저 일어나는 일은 BeanDefinition 등록이다. `@Spri
 - 초기화 메서드와 소멸 메서드 정보
 - lazy-init 여부 같은 생성 전략
 
-즉, 이 단계는 "객체 생성"이 아니라 "어떻게 생성할지에 대한 설계도 등록" 단계에 가깝다.
+즉, 이 단계는 어떻게 생성할지에 대한 설계도를 등록하는 단계에 가깝다.
 
 ### 3. Bean 생성 시작
 
@@ -389,7 +393,7 @@ try {
 
 1. `populateBean()`
 
-이 단계에서는 의존성 주입이 일어난다. 즉, 생성자 주입이라면 생성 시점에 넘긴 의존성이 연결되고, 필드 주입이나 setter 주입이라면 이 단계에서 Bean에 실제 값이 채워진다.
+이 단계에서는 Bean이 필요로 하는 의존 객체가 실제로 연결된다. 다만 생성자 주입은 객체를 만드는 순간 의존성이 함께 전달되고, 필드 주입이나 setter 주입은 객체를 만든 뒤 필드나 메서드를 통해 의존성이 주입된다.
 
 2. `initializeBean()`
 
@@ -446,7 +450,7 @@ public class OrderRunner {
 
 여기서 `OrderRunner`는 `OrderService`를 직접 생성하지 않는다. 컨테이너가 생명주기를 끝까지 관리해 둔 Bean을 주입받아 사용하기만 한다.
 
-그리고 컨테이너가 종료되면 소멸 단계가 시작된다. 여기서 말하는 소멸은 Spring이 Bean의 종료 메서드를 실행하고 관리 대상에서 내려놓는 lifecycle 상의 종료를 뜻한다. 객체가 즉시 힙에서 사라지는 것은 아니며, 실제 메모리 회수는 더 이상 참조가 없을 때 JVM의 GC가 담당한다. 또한 컨테이너를 닫는 행위와 Bean의 destroy 메서드가 실행되는 것은 밀접하지만 같은 일은 아니다.
+마지막으로 컨테이너가 종료되면 소멸 단계가 시작된다. 여기서 말하는 소멸은 Spring이 Bean의 종료 메서드를 실행하고 관리 대상에서 내려놓는 lifecycle 상의 종료를 뜻한다. 객체가 즉시 힙에서 사라지는 것은 아니며, 실제 메모리 회수는 더 이상 참조가 없을 때 JVM의 GC가 담당한다. 또한 컨테이너를 닫는 행위와 Bean의 destroy 메서드가 실행되는 것은 밀접하지만 같은 일은 아니다.
 
 - `context.close()`는 컨테이너를 닫는 트리거다.
 - `@PreDestroy`는 컨테이너가 닫힐 때 이 Bean에서 실행할 메서드를 표시하는 방식이다.
